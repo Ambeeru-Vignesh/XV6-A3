@@ -482,5 +482,6 @@ struct pstat {
 ## 5. Conclusion <a name="conclusion"></a>
 
 You have successfully modified the xv6 operating system to provide all the scheduler statistics of the processes including average turn around time and average wait time.
-#   X V 6 - A 3  
+#   X V 6 - A 3 
+ 
  
