@@ -1,4 +1,4 @@
-# xv6 OS Scheduling Algorithm Assignment with Statistics Tracking
+#xv6 OS Scheduling Algorithm Assignment with Statistics Tracking
 
 This README provides a detailed guide on how to modify the xv6 operating system to implement two scheduling algorithms, namely First-Come First-Serve (FCFS) and Priority-Based Scheduling. Additionally, we will create a new program tester.c that runs these scheduling scenarios and tracks relevant process statistics.
 
@@ -482,5 +482,6 @@ struct pstat {
 ## 5. Conclusion <a name="conclusion"></a>
 
 You have successfully modified the xv6 operating system to provide all the scheduler statistics of the processes including average turn around time and average wait time.
-#   X V 6 - A 3  
+#   X V 6 - A 3 
+ 
  
