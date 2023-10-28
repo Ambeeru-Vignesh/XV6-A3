@@ -1,6 +1,6 @@
 # xv6 OS Scheduling Algorithm Assignment with Statistics Tracking
 
-This README provides a detailed guide on how to modify the xv6 operating system to implement two scheduling algorithms, namely First-Come First-Serve (FCFS) and Priority-Based Scheduling. Additionally, we will create a new program tester.c that runs these scheduling scenarios and tracks relevant process statistics.
+This README provides a detailed guide on how to modify the xv6 operating system to implement two scheduling algorithms, namely First-Come First-Serve (FCFS) and Priority-Based Scheduling. Additionally, we will create a new program test.c that runs these scheduling scenarios and tracks relevant process statistics.
 
 ## Table of Contents
 
@@ -13,7 +13,7 @@ This README provides a detailed guide on how to modify the xv6 operating system 
    3. [Update `Makefile`](#update-makefile)
    4. [Create `head.c`](#create-headc)
    5. [Create `uniq.c`](#create-uniqc)
-   6. [Create `tester.c`](#create-testc)
+   6. [Create `test.c`](#create-testc)
    7. [Create `pstat.h`](#create-pstat)
 
 4. [Building and Running](#building-and-running)
@@ -24,6 +24,11 @@ This README provides a detailed guide on how to modify the xv6 operating system 
 This assignment focuses on extending the xv6 operating system by implementing two scheduling algorithms, FCFS and Priority-Based Scheduling. Additionally, we will track and report process statistics including waiting time, turnaround time, and others. The goal is to test these scheduling algorithms in different scenarios and report the performance statistics.
 
 ## 2. Assignment Description <a name="assignment-description"></a>
+
+- **System calls**:
+
+  - `customfork`: sets up the priority for each process.
+  - `procstat`: calculates turnaround and waiting time of a process.
 
 - **Utilities**:
   - `head`: Displays the first N lines of a file.
@@ -42,11 +47,21 @@ This assignment focuses on extending the xv6 operating system by implementing tw
 
 For each scenario, the assignment requires tracking and reporting the following process statistics:
 
-Creation time (ctime)
-End time (etime)
-Total time (ttime)
-Average Wait time (wtime)
-Average Turnaround time (tatime)
+- **FCFS**:
+  Creation time (ctime)
+  End time (etime)
+  Total time (ttime)
+  Average Wait time (wtime)
+  Average Turnaround time (tatime)
+
+- **PBS**:
+  Creation time (ctime)
+  End time (etime)
+  Total time (ttime)
+  Priority of the process (priority)
+  Average Wait time (wtime)
+  Average Turnaround time (tatime)
+
 To achieve this, we will modify few files and implement a system call to calculate average wait and turnaround times.
 
 ## 3. Modification Steps <a name="modification-steps"></a>
@@ -57,14 +72,15 @@ Edit the `proc.h` file and add the following lines:
 
 ```c
 // New fields for extended proc struct
-int tatime;       // Turnaround time for the process
+int tatime;
+int priority;       // Turnaround time for the process
 ```
 
 ### 3.2. Update `proc.c` <a name="update-procc"></a>
 
 In the `proc.c` file, add the following lines as instructed:
 
-#### For FCFS
+- **For FCFS**
 
 ```c
 void
@@ -120,12 +136,13 @@ scheduler(void)
 }
 ```
 
-#### For PBS:
+- **For PBS:**
 
 ```c
 void scheduler(void)
 {
-  // struct proc *p;
+  struct proc *p, *p1;
+
   struct cpu *c = mycpu();
   c->proc = 0;
 
@@ -134,42 +151,54 @@ void scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
+    struct proc *highP = 0;
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-
-    // Assignment3 PBS
-    struct proc *p;
-    struct proc *to_run_proc = 0;
-
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
+
       if (p->state != RUNNABLE)
         continue;
-
-      if (to_run_proc == 0)
-        to_run_proc = p;
-
-      else if (p->priority <= to_run_proc->priority)
+      // Choose the process with highest priority (among RUNNABLEs)
+      highP = p;
+      for (p1 = ptable.proc; p1 < &ptable.proc[NPROC]; p1++)
       {
-        if (p->priority == to_run_proc->priority && p->ctime < to_run_proc->ctime)
-        {
-          to_run_proc = p;
-        }
-        else
-        {
-          to_run_proc = p;
-        }
+        if ((p1->state == RUNNABLE) && (highP->priority > p1->priority))
+          highP = p1;
+      }
+
+      if (highP != 0)
+        p = highP;
+
+      if (p != 0)
+      {
+
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = p;
+        switchuvm(p);
+        p->state = RUNNING;
+
+        swtch(&(c->scheduler), p->context);
+        switchkvm();
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
       }
     }
-
     release(&ptable.lock);
   }
 }
 
 ```
 
-```c
+### System calls
 
+- **FCFS :**
+
+```c
 // Calculate the average wait time and average turn around time of all processes
 int
 procstat(int processid, struct pstat *pstat)
@@ -229,7 +258,9 @@ procstat(int processid, struct pstat *pstat)
 
 ```
 
-#### In test.c
+- **PBS :**
+
+### In test.c
 
 ```c
 sum_of_wtime += wtime;
@@ -387,6 +418,7 @@ int main(int argc, char *argv[]) {
 Create a new file named `test.c` and add the following code:
 
 ```c
+
 #include "types.h"
 #include "stat.h"
 #include "user.h"
@@ -397,11 +429,13 @@ struct pstat {
     int etime;
     int ttime;
     int tatime;
+    int priority;
 };
 
 int main() {
     char *commands[] = {"uniq", "head"};
     char *arguments[] = {"input.txt", "example.txt"};
+    int prior[] = {2,1};
     int num_commands = sizeof(commands) / sizeof(commands[0]);
     int wtime = 0, sum_of_wtime = 0, sum_of_tatime = 0;
 
@@ -411,48 +445,44 @@ int main() {
         struct pstat pstat_info;
 
         // creating a child process
-        cpid = fork();
+        cpid = customfork(prior[i]);
         if (cpid < 0)
-	{
+	c     {
             printf(1, "fork failed to create\n");
             exit();
         }
         if (cpid == 0)
-	{
+	      {
 	    // This is the child process
             char *args[] = {commands[i], arguments[i], 0};
-	    printf(1, "Process%d",i);
             exec(args[0], args);
             printf(1, "exec %s failed for the process\n", commands[i]);
             exit();
         }
-	else
-	{
+	      else
+	      {
           if (procstat(cpid, &pstat_info) < 0)
-	    {
+	          {
                 printf(1, "procstat failed\n");
                 exit();
             }
         }
 
+	      //printing the statistics of the processes
         printf(1, "\nProcess statistics for '%s %s':\n", commands[i], arguments[i]);
         printf(1, "  Creation time: %d\n", pstat_info.ctime);
         printf(1, "  End time: %d\n", pstat_info.etime);
         printf(1, "  Total time: %d\n\n", pstat_info.ttime);
-
-
+        printf(1," Priority of this process is: %d\n",pstat_info.priority);
 	      sum_of_wtime += wtime;
         sum_of_tatime += pstat_info.tatime;
 	      wtime += pstat_info.tatime;
-
     }
 
-    printf(1, " Average Turnaround time using FCFS: %d\n\n", (sum_of_tatime/num_commands));
+    printf(1, " Average Turnaround time using FCFS: %d\n", (sum_of_tatime/num_commands));
     printf(1, " Average Wating time using FCFS: %d\n\n", (sum_of_wtime/num_commands));
-
     exit();
 }
-
 ```
 
 ### 3.7. Create `pstat.h` <a name="create-pstath"></a>
@@ -465,6 +495,7 @@ struct pstat {
   int etime;
   int ttime;
   int tatime;
+  int priority;
 };
 ```
 
@@ -481,7 +512,4 @@ struct pstat {
 
 ## 5. Conclusion <a name="conclusion"></a>
 
-You have successfully modified the xv6 operating system to provide all the scheduler statistics of the processes including average turn around time and average wait time.
-#   X V 6 - A 3 
- 
- 
+You have successfully modified the xv6 operating system to provide all the scheduler statistics of the processes including FCFS and PBS.
